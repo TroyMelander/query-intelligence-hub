@@ -1,2 +1,6 @@
 streamlit
 pandas
+openai
+google-genai
+matplotlib
+numpy
