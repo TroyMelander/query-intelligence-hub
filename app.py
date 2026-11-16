@@ -116,8 +116,8 @@ def load_data():
 
 df_outcomes = load_data()
 
-# --- LIVE LLM DYNAMIC TRIAGE & STEP GENERATOR ---
-def live_llm_triage_and_steps(query: str, engine_mode: str, api_key: str, azure_endpoint: str, azure_deployment: str):
+# --- LIVE LLM DYNAMIC TRIAGE & STEP GENERATOR (GEMINI FOCUSED) ---
+def live_llm_triage_and_steps(query: str, api_key: str):
     system_prompt = """
     You are the Lead Clinical Data Architect & AI Routing Concierge at UCSD Health.
     Analyze the incoming clinical or research query and accurately select the single best data platform from these three options:
@@ -131,43 +131,27 @@ def live_llm_triage_and_steps(query: str, engine_mode: str, api_key: str, azure_
     - "diy_steps": (string formatted in clean Markdown detailing the exact step-by-step build instructions for the recommended platform)
     """
 
-    # 1. Try Live Azure OpenAI (UCSD M365 Copilot Backend) if credentials provided
-    if "Azure" in engine_mode and api_key and azure_endpoint:
-        try:
-            client = AzureOpenAI(api_key=api_key, api_version="2024-06-01", azure_endpoint=azure_endpoint)
-            resp = client.chat.completions.create(
-                model=azure_deployment,
-                messages=[
-                    {"role": "system", "content": system_prompt + "\nReturn ONLY valid JSON."},
-                    {"role": "user", "content": f"Clinical Query: {query}"}
-                ],
-                temperature=0.1,
-                response_format={"type": "json_object"}
-            )
-            data = json.loads(resp.choices[0].message.content)
-            return data["recommended_system"], data["why_reason"], data["diy_steps"]
-        except Exception as e:
-            st.warning(f"Live Azure API call failed ({e}). Falling back to intelligent heuristic router.")
-
-    # 2. Try Live Google Gemini if API key provided
-    elif "Gemini" in engine_mode and api_key:
+    # If the user provided a Gemini API key in the sidebar, execute a real live call!
+    if api_key:
         try:
             client = genai.Client(api_key=api_key)
-            resp = client.models.generate_content(
+            response = client.models.generate_content(
                 model="gemini-2.5-flash",
-                contents=f"{system_prompt}\n\nQuery: {query}\n\nReturn ONLY a valid JSON object with keys: recommended_system, why_reason, diy_steps."
+                contents=f"{system_prompt}\n\nClinical Query: {query}\n\nReturn ONLY a valid JSON object with keys: recommended_system, why_reason, diy_steps."
             )
-            text = resp.text.strip()
+            text = response.text.strip()
+            # Clean markdown code blocks if the model wrapped the JSON
             if "```json" in text:
                 text = text.split("```json")[1].split("```")[0].strip()
             elif "```" in text:
                 text = text.split("```")[1].split("```")[0].strip()
+            
             data = json.loads(text)
             return data["recommended_system"], data["why_reason"], data["diy_steps"]
         except Exception as e:
-            st.warning(f"Live Gemini API call failed ({e}). Falling back to intelligent heuristic router.")
+            st.warning(f"Live Gemini API call encountered an error ({e}). Using intelligent heuristic fallback.")
 
-    # 3. Intelligent Heuristic Fallback (Ensures 100% uptime during live meetings even without active API keys)
+    # Fallback if no API key is entered yet
     q_lower = query.lower()
     if any(k in q_lower for k in ["recruit", "enrollment", "multi-site", "uc health", "federated", "enact", "shrine"]):
         rec = "ENACT Shrine"
