@@ -258,24 +258,20 @@ def render_cumulative_incidence_chart(report_data: dict):
     plt.tight_layout()
     return fig
 
-# --- SIDEBAR (ADMIN & API CONFIG) ---
+# --- SIDEBAR (ADMIN & GEMINI CONFIG) ---
 with st.sidebar:
     st.title("⚙️ Architect Settings")
-    ai_engine = st.selectbox(
-        "Backend AI Provider for Triage & Steps:",
-        ["UCSD M365 Copilot / Azure OpenAI (HIPAA Protected)", "Google Gemini API (POC)"]
+    st.markdown("**Active Mode:** Google Gemini Live API")
+    
+    api_key = st.text_input(
+        "Enter Gemini API Key:", 
+        type="password", 
+        placeholder="AIzaSy...",
+        help="Paste your Gemini API key here for live generative triage and custom step generation. Leave blank to use fallback mode."
     )
-    with st.expander("🔐 Configure Live API Credentials"):
-        st.caption("Optional: Inject your API key for live LLM routing.")
-        if "Azure" in ai_engine:
-            azure_endpoint = st.text_input("Azure Endpoint URL", placeholder="https://...openai.azure.com/")
-            azure_deployment = st.text_input("Deployment Name", value="gpt-4o")
-            api_key = st.text_input("Azure API Key", type="password")
-        else:
-            azure_endpoint = ""
-            azure_deployment = ""
-            api_key = st.text_input("Gemini API Key", type="password")
+    
     st.markdown("---")
+    st.markdown("🔮 **Future Roadmap:** Azure OpenAI / M365 Copilot endpoint integration for UCSD BAA compliance is staged for when enterprise agent access is approved.")
     st.markdown("*Architected by Troy Melander, UCSD Health*")
 
 # --- MAIN INTERFACE ---
