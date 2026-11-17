@@ -156,8 +156,8 @@ def live_llm_triage_and_steps(query: str, api_key: str):
     - "why_reason": (concise explanation of why this system fits best)
     - "diy_steps": (Markdown step-by-step build instructions with codes)
     """
-
-    if api_key:
+    
+if api_key:
         try:
             client = genai.Client(api_key=api_key)
             prompt_payload = (
@@ -165,11 +165,35 @@ def live_llm_triage_and_steps(query: str, api_key: str):
                 "Return ONLY a valid JSON object with keys: "
                 "recommended_system, why_reason, diy_steps."
             )
-            response = client.models.generate_content(
-                model="gemini-2.5-flash",
-                contents=prompt_payload
-            )
-            text = response.text.strip()
+            
+            # Use the new Interactions API if supported by installed SDK version,
+            # otherwise use generate_content with gemini-3.8-flash
+            if hasattr(client, "interactions"):
+                interaction = client.interactions.create(
+                    model="gemini-3.8-flash",
+                    input=prompt_payload,
+                    response_format={
+                        "type": "text",
+                        "mime_type": "application/json",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "recommended_system": {"type": "string"},
+                                "why_reason": {"type": "string"},
+                                "diy_steps": {"type": "string"}
+                            },
+                            "required": ["recommended_system", "why_reason", "diy_steps"]
+                        }
+                    }
+                )
+                text = interaction.output_text.strip()
+            else:
+                response = client.models.generate_content(
+                    model="gemini-3.8-flash",
+                    contents=prompt_payload
+                )
+                text = response.text.strip()
+
             if "```json" in text:
                 text = text.split("```json")[1].split("```")[0].strip()
             elif "```" in text:
