@@ -4,7 +4,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 import urllib.parse
 import json
-from openai import AzureOpenAI
 from google import genai
 
 # --- PAGE CONFIG ---
@@ -12,7 +11,7 @@ st.set_page_config(
     page_title="UCSD Clinical Query Concierge",
     page_icon="🧬",
     layout="wide",
-    initial_sidebar_state="collapsed" # Collapsed by default for zero clinician friction
+    initial_sidebar_state="collapsed"
 )
 
 # --- CUSTOM CSS: GREEN BUTTONS & JAMA EVIDENCE BOX ---
@@ -128,10 +127,9 @@ def live_llm_triage_and_steps(query: str, api_key: str):
     Return your response strictly as a valid JSON object with the following keys:
     - "recommended_system": (string exactly equal to "Epic Cosmos", "ENACT Shrine", or "Medeloop")
     - "why_reason": (string explaining clearly why this system was chosen for this specific query)
-    - "diy_steps": (string formatted in clean Markdown detailing the exact step-by-step build instructions for the recommended platform)
+    - "diy_steps": (string formatted in clean Markdown detailing the exact step-by-step build instructions for the recommended platform, including relevant ICD-10 or RxNorm codes)
     """
 
-    # If the user provided a Gemini API key in the sidebar, execute a real live call!
     if api_key:
         try:
             client = genai.Client(api_key=api_key)
@@ -140,14 +138,16 @@ def live_llm_triage_and_steps(query: str, api_key: str):
                 contents=f"{system_prompt}\n\nClinical Query: {query}\n\nReturn ONLY a valid JSON object with keys: recommended_system, why_reason, diy_steps."
             )
             text = response.text.strip()
-            # Clean markdown code blocks if the model wrapped the JSON
             if "```json" in text:
                 text = text.split("```json")[1].split("```")[0].strip()
             elif "```" in text:
                 text = text.split("```")[1].split("```")[0].strip()
             
             data = json.loads(text)
-            return data["recommended_system"], data["why_reason"], data["diy_steps"]
+            rec = data.get("recommended_system", "Medeloop")
+            if rec not in PORTAL_LINKS:
+                rec = "Medeloop"
+            return rec, data.get("why_reason", ""), data.get("diy_steps", "")
         except Exception as e:
             st.warning(f"Live Gemini API call encountered an error ({e}). Using intelligent heuristic fallback.")
 
@@ -263,12 +263,19 @@ with st.sidebar:
     st.title("⚙️ Architect Settings")
     st.markdown("**Active Mode:** Google Gemini Live API")
     
-    api_key = st.text_input(
-        "Enter Gemini API Key:", 
-        type="password", 
-        placeholder="AIzaSy...",
-        help="Paste your Gemini API key here for live generative triage and custom step generation. Leave blank to use fallback mode."
-    )
+    # Automatically load from Streamlit Cloud Secrets if configured, otherwise allow sidebar entry
+    secret_key = st.secrets.get("GEMINI_API_KEY", "") if hasattr(st, "secrets") else ""
+    
+    if secret_key:
+        st.success("🔒 Gemini API Key loaded securely from Streamlit Secrets.")
+        api_key = secret_key
+    else:
+        api_key = st.text_input(
+            "Enter Gemini API Key:", 
+            type="password", 
+            placeholder="AIzaSy...",
+            help="Paste your Gemini API key here, or add GEMINI_API_KEY to Streamlit Cloud Secrets."
+        )
     
     st.markdown("---")
     st.markdown("🔮 **Future Roadmap:** Azure OpenAI / M365 Copilot endpoint integration for UCSD BAA compliance is staged for when enterprise agent access is approved.")
@@ -276,120 +283,4 @@ with st.sidebar:
 
 # --- MAIN INTERFACE ---
 st.title("🧬 UCSD Clinical Query & Evidence Concierge")
-st.markdown("Enter any clinical or research question below. The live LLM agent will **automatically triage the optimal platform**, generate custom execution steps, and synthesize an Evidence Brief.")
-
-tab_main, tab_catalog = st.tabs(["⚡ Ask a Clinical Question (Zero-Click Concierge)", "📚 Validated Query Catalog"])
-
-with tab_main:
-    default_email = st.query_params.get("email", "")
-    
-    with st.container(border=True):
-        default_q = "Do any sulfonylureas (glimepiride, glipizide, or glyburide) increase the risk of cardiovascular events compared with dipeptidyl peptidase 4 inhibitors (DPP4is)?"
-        query_input = st.text_area("1. Enter Your Clinical or Research Question:", value=default_q, height=85)
-        
-        col_email, col_check = st.columns([2, 2])
-        with col_email:
-            user_email = st.text_input("2. Your UCSD Email (Optional):", value=default_email, placeholder="provider@health.ucsd.edu")
-        with col_check:
-            st.write("")
-            st.write("")
-            show_diy_steps = st.checkbox("Also generate DIY system instructions (Copyable Step-by-Step Guide)", value=False)
-            
-        submit_btn = st.button("🚀 Get Answer & Triage Query", type="primary", use_container_width=True)
-
-    if submit_btn and query_input:
-        with st.spinner("Live LLM agent analyzing query intent, selecting optimal data platform, and synthesizing evidence..."):
-            
-            # --- LIVE LLM TRIAGE & STEP GENERATION ---
-            recommended_sys, why_reason, diy_text = live_llm_triage_and_steps(
-                query=query_input,
-                engine_mode=ai_engine,
-                api_key=api_key if 'api_key' in locals() else "",
-                azure_endpoint=azure_endpoint if 'azure_endpoint' in locals() else "",
-                azure_deployment=azure_deployment if 'azure_deployment' in locals() else "gpt-4o"
-            )
-            report = generate_evidence_brief(query_input)
-            
-            if user_email:
-                st.success(f"📧 **Automated Delivery Active:** The synthesized Evidence Brief & Cumulative Incidence Curve below have been queued for delivery to **{user_email}**.")
-            
-            # --- DYNAMIC SYSTEM TRIAGE & GREEN LAUNCH BUTTONS ---
-            st.subheader(f"🎯 Dynamic System Triage: **{recommended_sys}** (+ OpenEvidence)")
-            st.info(f"**Why {recommended_sys} was selected by the AI agent:** {why_reason}")
-            
-            encoded_q = urllib.parse.quote(query_input)
-            openevidence_url = f"https://www.openevidence.com/?q={encoded_q}"
-            medeloop_url = f"https://analytics.medeloop.ai/?query={encoded_q}"
-            
-            btn_col1, btn_col2, btn_col3 = st.columns([2, 1.5, 1.5])
-            with btn_col1:
-                st.link_button(
-                    label=PORTAL_LINKS[recommended_sys]["label"],
-                    url=PORTAL_LINKS[recommended_sys]["url"],
-                    type="primary",
-                    use_container_width=True
-                )
-            with btn_col2:
-                st.link_button(
-                    label="⚡ Port Query to Medeloop (HealthVerity)",
-                    url=medeloop_url,
-                    use_container_width=True
-                )
-            with btn_col3:
-                st.link_button(
-                    label="📖 Port Query to OpenEvidence",
-                    url=openevidence_url,
-                    use_container_width=True
-                )
-
-            # --- OPTIONAL DIY INSTRUCTIONS ---
-            if show_diy_steps:
-                st.markdown("---")
-                st.subheader(f"🛠️ Copy The Steps: {recommended_sys} DIY Execution Guide")
-                st.caption("Click the **Copy icon** in the top-right corner of the box below to copy these exact steps (`Ctrl+C`).")
-                st.code(diy_text, language="markdown")
-
-            # --- SYNTHESIZED EVIDENCE BRIEF ---
-            st.markdown("---")
-            st.subheader("📄 Synthesized Evidence Brief (Medeloop HealthVerity + OpenEvidence)")
-            
-            evidence_html = f"""
-            <div class="evidence-box">
-                <div class="evidence-title">{report['title']}</div>
-                <div class="evidence-p"><span class="section-tag">Objective</span> {report['objective']}</div>
-                <div class="evidence-p"><span class="section-tag">Design, Setting, and Participants</span> {report['design']}</div>
-                <div class="evidence-p"><span class="section-tag">Exposures</span> {report['exposures']}</div>
-                <div class="evidence-p"><span class="section-tag">Main Outcomes and Measures</span> {report['outcomes']}</div>
-                <div class="evidence-p"><span class="section-tag">Results</span> {report['results']}</div>
-                <div class="evidence-p"><span class="section-tag">Conclusions and Relevance</span> {report['conclusions']}</div>
-            </div>
-            """
-            st.markdown(evidence_html, unsafe_allow_html=True)
-            
-            fig = render_cumulative_incidence_chart(report)
-            col_plot, col_dl = st.columns([3, 1])
-            with col_plot:
-                st.pyplot(fig)
-            with col_dl:
-                st.markdown("##### 📥 Export / Email Artifact")
-                st.download_button(
-                    label="📄 Download Evidence Brief (.html)",
-                    data=evidence_html,
-                    file_name="UCSD_Clinical_Evidence_Brief.html",
-                    mime="text/html",
-                    use_container_width=True
-                )
-                st.markdown("##### Other UCSD Portals:")
-                st.link_button("🌐 Epic Cosmos (UCSD Pulse)", PORTAL_LINKS["Epic Cosmos"]["url"], use_container_width=True)
-                st.link_button("🏥 SHRINE - Find Patients", PORTAL_LINKS["ENACT Shrine"]["url"], use_container_width=True)
-
-with tab_catalog:
-    st.subheader("Aggregated Tri-Platform Findings Catalog")
-    search_term = st.text_input("🔍 Search past clinical queries by medication, condition, or data source:")
-    if search_term:
-        filtered_df = df_outcomes[
-            df_outcomes.apply(lambda row: row.astype(str).str.contains(search_term, case=False).any(), axis=1)
-        ]
-    else:
-        filtered_df = df_outcomes
-    st.dataframe(filtered_df, use_container_width=True, hide_index=True)
+st.markdown("Enter any clinical or research question below. The live LLM agent will **automatically triage the optimal
