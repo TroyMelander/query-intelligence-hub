@@ -156,8 +156,8 @@ def live_llm_triage_and_steps(query: str, api_key: str):
     - "why_reason": (concise explanation of why this system fits best)
     - "diy_steps": (Markdown step-by-step build instructions with codes)
     """
-    
-if api_key:
+
+    if api_key:
         try:
             client = genai.Client(api_key=api_key)
             prompt_payload = (
