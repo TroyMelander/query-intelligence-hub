@@ -561,8 +561,3 @@ with tab_catalog:
     else:
         filtered_df = df_outcomes
     st.dataframe(filtered_df, use_container_width=True, hide_index=True)
-EOF
-python3 -m py_compile app.py && echo "✅ Syntax Verified Clean!"
-git add app.py
-git commit -m "Fix multiline string wrap in app.py"
-git push origin main
