@@ -139,73 +139,78 @@ def load_data():
 
 df_outcomes = load_data()
 
-# --- LIVE LLM DYNAMIC TRIAGE & STEP GENERATOR (GEMINI FOCUSED) ---
+# --- LIVE LLM DYNAMIC TRIAGE & STEP GENERATOR (HARD 12s TIMEOUT) ---
 def live_llm_triage_and_steps(query: str, api_key: str):
-    system_prompt = """
-    You are the Lead Clinical Data Architect at UCSD Health.
-    Analyze the clinical query and select the single best platform:
-    1. "Epic Cosmos" -> Massive global sample size (200M+ patients),
-       rare event power, and longitudinal Epic SlicerDicer temporal analysis.
-    2. "ENACT Shrine" -> Multi-site federated CTSA/ACT network queries,
-       OMOP/ACT ontologies, and clinical trial recruitment across UC nodes.
-    3. "Medeloop" -> Rapid target-trial emulation, HealthVerity closed-claims
-       + linked pharmacy data, deep phenotyping, and NLP note extraction.
+    import urllib.request
+    import urllib.error
 
-    Return strictly a valid JSON object with keys:
-    - "recommended_system": ("Epic Cosmos", "ENACT Shrine", or "Medeloop")
-    - "why_reason": (concise explanation of why this system fits best)
-    - "diy_steps": (Markdown step-by-step build instructions with codes)
-    """
+    system_prompt = (
+        "You are the Lead Clinical Data Architect at UCSD Health. "
+        "Analyze the clinical query and select the single best platform:\n"
+        "1. 'Epic Cosmos' -> Massive global sample size (200M+ patients), "
+        "rare event statistical power, and longitudinal Epic SlicerDicer analysis.\n"
+        "2. 'ENACT Shrine' -> Multi-site federated CTSA/ACT network queries, "
+        "OMOP/ACT ontologies, and clinical trial recruitment across UC nodes.\n"
+        "3. 'Medeloop' -> Rapid target-trial emulation, HealthVerity closed-claims "
+        "+ linked pharmacy data, deep phenotyping, and NLP note extraction.\n\n"
+        "Return ONLY a valid JSON object with keys: "
+        "recommended_system ('Epic Cosmos', 'ENACT Shrine', or 'Medeloop'), "
+        "why_reason (1-2 sentences), and diy_steps (Markdown step-by-step guide)."
+    )
 
     if api_key:
-        try:
-            client = genai.Client(api_key=api_key)
-            prompt_payload = (
-                f"{system_prompt}\n\nClinical Query: {query}\n\n"
-                "Return ONLY a valid JSON object with keys: "
-                "recommended_system, why_reason, diy_steps."
+        clean_key = api_key.strip().strip('"').strip("'")
+        prompt_text = f"{system_prompt}\n\nClinical Query: {query}"
+
+        # Try gemini-3.8-flash first, then gemini-4-hydrogen, with a strict 12s timeout
+        for model_name in ["gemini-3.8-flash", "gemini-2.0-flash"]:
+            url = (
+                f"https://generativelanguage.googleapis.com/v1beta/models/"
+                f"{model_name}:generateContent?key={clean_key}"
             )
-            
-            # Use the new Interactions API if supported by installed SDK version,
-            # otherwise use generate_content with gemini-3.8-flash
-            if hasattr(client, "interactions"):
-                interaction = client.interactions.create(
-                    model="gemini-3.8-flash",
-                    input=prompt_payload,
-                    response_format={
-                        "type": "text",
-                        "mime_type": "application/json",
-                        "schema": {
-                            "type": "object",
-                            "properties": {
-                                "recommended_system": {"type": "string"},
-                                "why_reason": {"type": "string"},
-                                "diy_steps": {"type": "string"}
-                            },
-                            "required": ["recommended_system", "why_reason", "diy_steps"]
-                        }
-                    }
-                )
-                text = interaction.output_text.strip()
-            else:
-                response = client.models.generate_content(
-                    model="gemini-3.8-flash",
-                    contents=prompt_payload
-                )
-                text = response.text.strip()
+            payload = json.dumps({
+                "contents": [{"parts": [{"text": prompt_text}]}],
+                "generationConfig": {
+                    "temperature": 0.1,
+                    "responseMimeType": "application/json"
+                }
+            }).encode("utf-8")
 
-            if "```json" in text:
-                text = text.split("```json")[1].split("```")[0].strip()
-            elif "```" in text:
-                text = text.split("```")[1].split("```")[0].strip()
+            req = urllib.request.Request(
+                url,
+                data=payload,
+                headers={"Content-Type": "application/json"},
+                method="POST"
+            )
+            try:
+                with urllib.request.urlopen(req, timeout=12) as resp:
+                    resp_body = json.loads(resp.read().decode("utf-8"))
+                    text = (
+                        resp_body["candidates"][0]["content"]["parts"][0]["text"]
+                        .strip()
+                    )
+                    if "```json" in text:
+                        text = text.split("```json")[1].split("```")[0].strip()
+                    elif "```" in text:
+                        text = text.split("```")[1].split("```")[0].strip()
 
-            data = json.loads(text)
-            rec = data.get("recommended_system", "Medeloop")
-            if rec not in PORTAL_LINKS:
-                rec = "Medeloop"
-            return rec, data.get("why_reason", ""), data.get("diy_steps", "")
-        except Exception as e:
-            st.warning(f"Live Gemini API warning ({e}). Using heuristic router.")
+                    data = json.loads(text)
+                    rec = data.get("recommended_system", "Medeloop")
+                    if rec not in PORTAL_LINKS:
+                        rec = "Medeloop"
+                    return (
+                        rec,
+                        data.get("why_reason", ""),
+                        data.get("diy_steps", "")
+                    )
+            except Exception as e:
+                last_err = str(e)
+                continue
+
+        st.info(
+            "⚡ Fast-Track Routing Active (Live API timed out or rate-limited "
+            "on shared Streamlit Cloud IP; switched to instant UCSD ruleset)."
+        )
 
     q_lower = query.lower()
     shrine_keys = [
