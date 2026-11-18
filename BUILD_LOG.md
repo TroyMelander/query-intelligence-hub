@@ -45,3 +45,7 @@
 - **Live LLM Dynamic Triage & DIY Generation:** Currently uses deterministic rules + fallback templates when no API key is injected. *Next Step: Connect UCSD Azure OpenAI / Gemini API key via `.streamlit/secrets.toml`.*
 - **Medeloop / OpenEvidence Execution:** Currently synthesizes target-trial emulation statistics and Aalen-Johansen plots locally for demo speed. *Next Step: Implement persistent query intake logging (`submitted_queries.csv` / RDSG SQL table) to queue asynchronous Medeloop runs.*
 - **Automated Email / Epic InBasket Dispatch:** Currently confirms queuing in UI and provides direct HTML download. *Next Step: Wire `smtplib` to `smtp.ucsd.edu` inside UCSD firewall.*
+- **V3.2 — One-Time Enterprise Tenant Onboarding & Custom Routing Config:**
+  - Allow hospital/CTSA enterprise customers leasing the tool to configure a persistent `tenant_config.json` (one-time admin onboarding screen) storing their institution's specific intranet portal URLs, custom local data tools, and site-specific routing rules.
+- **V3.3 — "Request Analytics Team Execution" Concierge Ticket Handoff:**
+  - For busy clinicians who do not want to execute the DIY steps themselves, add a 1-click **"Submit Request to Analytics Team"** button that packages the clinical query, AI-triaged system, and pre-drafted DIY logic into a structured ticket routed directly to the institution's clinical informatics / analytics intake team (via ServiceNow, Jira, Jotform, or email).
