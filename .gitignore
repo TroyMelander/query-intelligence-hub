@@ -3,3 +3,5 @@
 secrets.toml
 
 internal_query_log.csv
+
+__pycache__/

@@ -187,7 +187,7 @@ def live_llm_triage_and_steps(query: str, api_key: str, portal_links: dict):
     if api_key:
         clean_key = api_key.strip().strip('"').strip("'")
         prompt_text = f"{system_prompt}\n\nClinical Query: {query}"
-        for model_name in ["gemini-2.0-flash", "gemini-1.5-flash"]:
+        for model_name in ["gemini-3.8-flash", "gemini-2.0-flash"]:
             url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={clean_key}"
             payload = json.dumps({"contents": [{"parts": [{"text": prompt_text}]}], "generationConfig": {"temperature": 0.15, "responseMimeType": "application/json"}}).encode("utf-8")
             req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"}, method="POST")
