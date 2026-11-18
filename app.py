@@ -117,7 +117,7 @@ df_outcomes = load_data()
 def live_llm_triage_and_steps(query: str, api_key: str, portal_links: dict):
     q_lower = query.lower()
     is_benchmark = any(k in q_lower for k in ["sulfonylurea", "dpp4", "glipizide", "glimepiride", "glyburide"])
-     is_doac_benchmark = "cholangitis" in q_lower and ("doac" in q_lower or "anticoagulant" in q_lower)
+    is_doac_benchmark = "cholangitis" in q_lower and ("doac" in q_lower or "anticoagulant" in q_lower)
 
     # Fetch real PMIDs from NIH PubMed API first so works cited is 100% real
     pubmed_articles, clean_search_q = fetch_live_pubmed_citations(query)
