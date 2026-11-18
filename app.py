@@ -19,6 +19,7 @@ div[data-testid="stLinkButton"] a[kind="primary"]:hover {background-color:#1b5e2
 .evidence-title {font-family:Arial,sans-serif;font-weight:800;font-size:1.05rem;text-transform:uppercase;color:#1a2530;margin-bottom:14px;}
 .section-tag {border:1.5px solid #222222;padding:1px 6px;font-family:Arial,sans-serif;font-weight:700;font-size:0.92rem;margin-right:6px;background-color:#f8f9fa;color:#000000;}
 .evidence-p {margin-bottom:10px;font-size:0.95rem;color:#111111;}
+.evidence-p a {color:#0b57d0!important;text-decoration:underline!important;font-weight:600;}
 </style>
 """, unsafe_allow_html=True)
 
@@ -33,6 +34,25 @@ LOG_FILE = "internal_query_log.csv"
 def log_query_to_csv(email: str, query: str, system_selected: str):
     row = pd.DataFrame([{"timestamp_utc": datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"), "user_email": email.strip() if email else "anonymous", "clinical_query": query.strip(), "recommended_system": system_selected}])
     row.to_csv(LOG_FILE, mode="a" if os.path.exists(LOG_FILE) else "w", header=not os.path.exists(LOG_FILE), index=False)
+
+def build_citations_html(citation_text: str, citation_queries: list, raw_query: str) -> str:
+    links_html = []
+    if isinstance(citation_queries, list) and len(citation_queries) > 0:
+        for item in citation_queries[:3]:
+            if isinstance(item, dict):
+                label = item.get("label", "Published Study / Guideline")
+                search_term = item.get("search_term", raw_query)
+            else:
+                label = str(item)
+                search_term = str(item)
+            enc = urllib.parse.quote(search_term)
+            pubmed_url = f"https://pubmed.ncbi.nlm.nih.gov/?term={enc}"
+            links_html.append(f'<a href="{pubmed_url}" target="_blank" rel="noopener noreferrer">🔗 Verify on PubMed: {label}</a>')
+    enc_raw = urllib.parse.quote(raw_query)
+    links_html.append(f'<a href="https://scholar.google.com/scholar?q={enc_raw}" target="_blank" rel="noopener noreferrer">🎓 Google Scholar Literature</a>')
+    links_html.append(f'<a href="https://www.openevidence.com/?q={enc_raw}" target="_blank" rel="noopener noreferrer">📖 OpenEvidence Synthesis</a>')
+    joined_links = " &nbsp;|&nbsp; ".join(links_html)
+    return f"{citation_text}<br><span style='font-family:Arial,sans-serif;font-size:0.86rem;'><strong>Source Verification Links:</strong> {joined_links}</span>"
 
 @st.cache_data
 def load_data():
@@ -57,7 +77,11 @@ def live_llm_triage_and_steps(query: str, api_key: str, portal_links: dict):
             "outcomes": "Composite MACE (acute MI, ischemic stroke, or CV hospitalization) within 180 days using IPCW and weighted Aalen-Johansen cumulative incidence curves.",
             "results": "Weighted 180-day MACE risk was 4.8% with sulfonylurea initiation vs 3.9% with DPP4i initiation (RD +0.9 pp [95% CI, +0.3 to +1.5]; HR 1.12 [95% CI, 1.05-1.19]).",
             "conclusions": "Initiating a sulfonylurea was associated with a statistically significant increase in 6-month CV events compared with DPP4is.",
-            "citations": "Validated Benchmark Run: HealthVerity Base & Epic Cosmos; CAROLINA & GRADE Trial Concordant.",
+            "citations": "Validated Benchmark Run: HealthVerity Base & Epic Cosmos; CAROLINA Trial (Rosenstock et al., JAMA 2019) & GRADE Study Concordant.",
+            "citation_links": [
+                {"label": "CAROLINA Trial (Linagliptin vs Glimepiride CV Outcomes - JAMA 2019)", "search_term": "CAROLINA trial linagliptin glimepiride cardiovascular outcomes JAMA 2019"},
+                {"label": "Sulfonylureas vs DPP4i MACE Observational Meta-Analysis", "search_term": "sulfonylureas vs DPP-4 inhibitors major adverse cardiovascular events cohort"}
+            ],
             "chart_title": "Cumulative MACE Incidence: Sulfonylureas vs DPP4i",
             "chart_annotation": "Day-180 RD +0.9 pp (95% CI +0.3 to +1.5)\nHR 1.12 (1.05-1.19); N=14,220",
             "curve1_y": [0.0, 0.4, 0.9, 1.5, 2.1, 2.7, 3.3, 3.9],
@@ -74,7 +98,8 @@ def live_llm_triage_and_steps(query: str, api_key: str, portal_links: dict):
             "outcomes": "Primary clinical event rate evaluated via temporal cohort sequencing and survival analysis.",
             "results": "[PRELIMINARY AI LITERATURE SYNTHESIS]: Published clinical literature indicates differential risk between strategies. Follow the custom DIY Wayfinder steps above to execute this cohort in the recommended data platform.",
             "conclusions": "Use the generated DIY workflow above to extract exact patient counts and institution-level incidence rates.",
-            "citations": "Synthesized via Gemini AI Literature Engine. Verify primary trial citations via the OpenEvidence handoff button above.",
+            "citations": "Synthesized via Gemini AI Literature Engine.",
+            "citation_links": [{"label": "Primary PubMed Clinical Literature Search", "search_term": query}],
             "chart_title": "Modeled Reference Trajectory: Primary vs Comparator",
             "chart_annotation": "Illustrative Protocol Curve",
             "curve1_y": [0.0, 1.2, 2.8, 4.2, 4.2, 6.4, 6.4, 6.4],
@@ -94,7 +119,7 @@ def live_llm_triage_and_steps(query: str, api_key: str, portal_links: dict):
         "- If 'Epic Cosmos': 5-step SlicerDicer Guide with exact ICD-10/RxNorm/LOINC codes: (1) Base Population, (2) Exposure Criteria, (3) Comparator & Exclusions, (4) SlicerDicer Temporal Linking (Outcome strictly AFTER Index Event), (5) Slices & Measures.\n"
         "- If 'ENACT Shrine': 5-step SHRINE WebClient Guide with ACT/OMOP folder paths: (1) Group 1 Base Diagnosis, (2) Group 2 Exposure, (3) Exclusion Panel, (4) Temporal Constraint Tab (Event 1 before Event 2), (5) Federated Site Execution.\n"
         "- If 'Medeloop': 4-step Guide: (1) Exact natural language prompt to paste into Medeloop, (2) Explicit instruction to select the option tagged '[recommended]' on Medeloop's 1-5+ clarifying study design questions (A-D), (3) Covariates to verify, (4) OpenEvidence prompt.\n"
-        "Return ONLY valid JSON with keys: 'recommended_system' ('Epic Cosmos', 'ENACT Shrine', or 'Medeloop'), 'why_reason', 'alternative_note', 'diy_steps', and 'report' (object with keys: 'title', 'objective', 'design', 'exposures', 'outcomes', 'results', 'conclusions', 'citations')."
+        "Return ONLY valid JSON with keys: 'recommended_system' ('Epic Cosmos', 'ENACT Shrine', or 'Medeloop'), 'why_reason', 'alternative_note', 'diy_steps', and 'report' (object with keys: 'title', 'objective', 'design', 'exposures', 'outcomes', 'results', 'conclusions', 'citations', and 'citation_links' [array of 2 objects with 'label' (specific trial/guideline/author name) and 'search_term' (exact PubMed search query for that trial/guideline)])."
     )
 
     if api_key:
@@ -118,7 +143,7 @@ def live_llm_triage_and_steps(query: str, api_key: str, portal_links: dict):
                         rec = "Epic Cosmos"
                     ai_rep = data.get("report", {})
                     if isinstance(ai_rep, dict) and not is_benchmark:
-                        for k in ["title", "objective", "design", "exposures", "outcomes", "results", "conclusions", "citations"]:
+                        for k in ["title", "objective", "design", "exposures", "outcomes", "results", "conclusions", "citations", "citation_links"]:
                             if k in ai_rep and ai_rep[k]:
                                 default_report[k] = ai_rep[k]
                     st.session_state["last_generated_report"] = default_report
@@ -303,11 +328,17 @@ with tab_main:
             st.markdown("---")
             st.subheader("📄 Generative AI Literature & Protocol Brief")
 
+            citations_with_urls = build_citations_html(
+                report.get("citations", "Synthesized via Gemini AI Literature Engine."),
+                report.get("citation_links", []),
+                query_input
+            )
+
             caution_html = f"""
             <div class="ai-caution-banner">
                 <strong>⚠️ GENERATIVE AI EVIDENCE BRIEF — USE WITH CLINICAL CAUTION:</strong>
                 This protocol and literature summary were generated via AI citing published clinical research
-                (<em>{report.get('citations', 'See OpenEvidence')}</em>). Unless marked as a Validated Benchmark Run,
+                (<em>{report.get('citations', 'See source links below')}</em>). Unless marked as a Validated Benchmark Run,
                 statistics are modeled protocol estimates—always execute the DIY steps in <strong>{recommended_sys}</strong>
                 to verify real-world cohort counts.
             </div>
@@ -324,7 +355,7 @@ with tab_main:
                 <div class="evidence-p"><span class="section-tag">Main Outcomes and Measures</span> {report['outcomes']}</div>
                 <div class="evidence-p"><span class="section-tag">Results & Synthesis</span> {report['results']}</div>
                 <div class="evidence-p"><span class="section-tag">Conclusions and Relevance</span> {report['conclusions']}</div>
-                <div class="evidence-p"><span class="section-tag">Work Cited / Grounding</span> {report.get('citations', 'Verify via OpenEvidence')}</div>
+                <div class="evidence-p"><span class="section-tag">Work Cited / Grounding</span> {citations_with_urls}</div>
             </div>
             """
             st.markdown(evidence_html.replace(caution_html, ""), unsafe_allow_html=True)
